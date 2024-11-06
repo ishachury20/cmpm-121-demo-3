@@ -4,7 +4,7 @@ import "./style.css";
 
 const app: HTMLDivElement = document.querySelector("#app")!;
 
-const gameName = "Blossom Quest";
+const gameName = "GeoCoin Carrier";
 document.title = gameName;
 
 const button = document.createElement("button");
