@@ -19,10 +19,10 @@ header.innerHTML = gameName;
 app.prepend(header);
 
 // Location of our classroom (as identified on Google Maps)
-const OAKES_CLASSROOM = leaflet.latLng(36.98949379578401, -122.06277128548504);
+const OAKES_CLASSROOM = leaflet.latLng(0, 0); // 36.98949379578401, -122.06277128548504);
 
 // Tunable gameplay parameters
-const GAMEPLAY_ZOOM_LEVEL = 19;
+const GAMEPLAY_ZOOM_LEVEL = 5;
 const TILE_DEGREES = 1e-4;
 const NEIGHBORHOOD_SIZE = 8;
 const CACHE_SPAWN_PROBABILITY = 0.1;
@@ -47,6 +47,7 @@ leaflet
   .addTo(map);
 
 // Add a marker to represent the player
+let playerCoins = 10;
 const playerMarker = leaflet.marker(OAKES_CLASSROOM);
 playerMarker.bindTooltip("That's you!");
 playerMarker.addTo(map);
@@ -54,7 +55,7 @@ playerMarker.addTo(map);
 // Display the player's points
 //let playerPoints = 0;
 const statusPanel = document.querySelector<HTMLDivElement>("#statusPanel")!; // element `statusPanel` is defined in index.html
-statusPanel.innerHTML = "No points yet...";
+statusPanel.innerHTML = `Player Coins ${playerCoins}`;
 
 // Used ChatGPT to create better markers
 // Need to add more to these markers (create a pop-up)
@@ -69,7 +70,17 @@ const redIcon = leaflet.icon({
 });
 
 // Used Brace to understand Leaflet.LatLng
-//
+interface Cache {
+  coins: number;
+  marker: leaflet.Marker;
+}
+
+const caches: Map<string, Cache> = new Map();
+
+function updatePlayerCoinsDisplay() {
+  statusPanel.innerHTML = `Player Coins: ${playerCoins}`;
+}
+
 function generateCaches(
   center: leaflet.LatLng,
   neighborhoodSize: number,
@@ -81,27 +92,85 @@ function generateCaches(
       const randomValue = luck(positionKey);
 
       if (randomValue < CACHE_SPAWN_PROBABILITY) {
-        // Similar code to the example
         const lat = center.lat + x * tileDegrees;
         const lng = center.lng + y * tileDegrees;
         const position = leaflet.latLng(lat, lng);
 
-        // Add the marker at this position with the custom blue icon
+        // Used YazmynS's code (for this) to understand how to write this and what it does
+        // I used their code in my file to generate deterministically generated coins
+        const coins =
+          Math.floor(luck([x, y, "initialValue"].toString()) * 100) + 1;
+
         const cacheMarker = leaflet.marker(position, { icon: redIcon }).addTo(
           map,
         );
-        cacheMarker.bindTooltip(
-          `Cache at (${lat.toFixed(5)}, ${lng.toFixed(5)})`,
-        ).openTooltip();
 
-        // testing purposes
-        cacheMarker.on("click", () => {
-          console.log(`Interacted with cache at position ${positionKey}`);
+        // Used the example (and asked Brace a little) to help me understand this and use it
+        const popupContent = `
+          <div>
+            <p>Cache at (${lat.toFixed(5)}, ${lng.toFixed(5)})</p>
+            <p>Coins: <span id="coin-count-${positionKey}">${coins}</span></p>
+            <button id="add-coin-${positionKey}">Add Coin</button>
+            <button id="remove-coin-${positionKey}">Remove Coin</button>
+          </div>
+        `;
+        cacheMarker.bindPopup(popupContent);
+
+        // Store cache details in the Map
+        caches.set(positionKey, { coins, marker: cacheMarker });
+
+        // Event listener for when the popup opens
+        cacheMarker.on("popupopen", () => {
+          const addCoinButton = document.getElementById(
+            `add-coin-${positionKey}`,
+          );
+          const removeCoinButton = document.getElementById(
+            `remove-coin-${positionKey}`,
+          );
+
+          // Add coin functionality
+          addCoinButton?.addEventListener("click", () => addCoins(positionKey));
+
+          // Remove coin functionality
+          removeCoinButton?.addEventListener(
+            "click",
+            () => removeCoins(positionKey),
+          );
         });
       }
     }
   }
 }
 
-// Generate caches around the player’s initial location
+function addCoins(positionKey: string) {
+  const cache = caches.get(positionKey);
+  if (cache && playerCoins > 0) {
+    cache.coins += 1;
+    playerCoins -= 1;
+
+    updateCoinCountDisplay(positionKey, cache.coins);
+    updatePlayerCoinsDisplay();
+  }
+}
+
+// Remove coin from a cache (player takes a coin from the cache)
+function removeCoins(positionKey: string) {
+  const cache = caches.get(positionKey);
+  if (cache && cache.coins > 0) {
+    cache.coins -= 1;
+    playerCoins += 1;
+
+    updateCoinCountDisplay(positionKey, cache.coins);
+    updatePlayerCoinsDisplay();
+  }
+}
+
+function updateCoinCountDisplay(positionKey: string, coinCount: number) {
+  const coinCountElement = document.getElementById(`coin-count-${positionKey}`);
+  if (coinCountElement) { //Used Brace to help write this
+    coinCountElement.textContent = coinCount.toString();
+  }
+}
+
+// Generate caches around the player's initial location (fixed location for testing purposes)
 generateCaches(OAKES_CLASSROOM, NEIGHBORHOOD_SIZE, TILE_DEGREES);
