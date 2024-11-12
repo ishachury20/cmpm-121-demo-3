@@ -19,10 +19,10 @@ header.innerHTML = gameName;
 app.prepend(header);
 
 // Location of our classroom (as identified on Google Maps)
-const OAKES_CLASSROOM = leaflet.latLng(0, 0); // 36.98949379578401, -122.06277128548504);
+const OAKES_CLASSROOM = leaflet.latLng(36.98949379578401, -122.06277128548504);
 
 // Tunable gameplay parameters
-const GAMEPLAY_ZOOM_LEVEL = 5;
+const GAMEPLAY_ZOOM_LEVEL = 19;
 const TILE_DEGREES = 1e-4;
 const NEIGHBORHOOD_SIZE = 8;
 const CACHE_SPAWN_PROBABILITY = 0.1;
@@ -52,30 +52,69 @@ const playerMarker = leaflet.marker(OAKES_CLASSROOM);
 playerMarker.bindTooltip("That's you!");
 playerMarker.addTo(map);
 
-// Display the player's points
-//let playerPoints = 0;
-const statusPanel = document.querySelector<HTMLDivElement>("#statusPanel")!; // element `statusPanel` is defined in index.html
-statusPanel.innerHTML = `Player Coins ${playerCoins}`;
+const statusPanel = document.querySelector<HTMLDivElement>("#statusPanel")!;
+statusPanel.innerHTML = `Player Coins: ${playerCoins}`;
 
-// Used ChatGPT to create better markers
-// Need to add more to these markers (create a pop-up)
-// ChatGPT prompt: how would I create a better icon for the caches given this code
-const redIcon = leaflet.icon({
-  iconUrl:
-    "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
-  iconSize: [25, 41], // Default size for Leaflet markers
-  iconAnchor: [12, 41], // Position the icon so it points to the location
-  popupAnchor: [1, -34],
-  tooltipAnchor: [16, -28],
-});
+// This interface is specifically created for the icon/pop-up used on all caches
+interface CacheIntrinsic {
+  icon: leaflet.Icon;
+  popupTemplate: (
+    positionKey: string,
+    latLng: leaflet.LatLng,
+    coins: number,
+  ) => string;
+}
 
-// Used Brace to understand Leaflet.LatLng
+// This interface is for the cache itself (not the visual aspects of it)
 interface Cache {
   coins: number;
   marker: leaflet.Marker;
 }
 
+// I used Brace to help me create and understand this code to implement the flyweight pattern
+// Brace suggested to create an interface for the cache (surrounding the pop-ups) and a class that managed the pop-up
+// Most of the code used in this is from Brace, though I did go through it to understand it and add to it
+// The cachefactory checks if there is already an existing icon in the location and if not creates an icon there, and attaching a pop-up
+// CacheIntrinsic and CacheFactory are used to implement the flyweight pattern
+class CacheFactory {
+  private static cacheTypes: Map<string, CacheIntrinsic> = new Map();
+
+  public static getCacheType(iconUrl: string): CacheIntrinsic {
+    let cacheType = CacheFactory.cacheTypes.get(iconUrl);
+
+    if (!cacheType) {
+      const icon = leaflet.icon({
+        iconUrl,
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34],
+        tooltipAnchor: [16, -28],
+      });
+
+      // Used the example (and asked Brace a little) to help me understand this and use it
+      const popupTemplate = (
+        positionKey: string,
+        latLng: leaflet.LatLng,
+        coins: number,
+      ) => `
+        <div>
+          <p>Cache at (${latLng.lat.toFixed(5)}, ${latLng.lng.toFixed(5)})</p>
+          <p>Coins: <span id="coin-count-${positionKey}">${coins}</span></p>
+          <button id="add-coin-${positionKey}">Add Coin</button>
+          <button id="remove-coin-${positionKey}">Remove Coin</button>
+        </div>
+      `;
+
+      cacheType = { icon, popupTemplate };
+      CacheFactory.cacheTypes.set(iconUrl, cacheType);
+    }
+
+    return cacheType;
+  }
+}
+
 // Used Brace to create this line of code
+// storing the x and y coordinates of locations
 const caches: Map<string, Cache> = new Map();
 
 function updatePlayerCoinsDisplay() {
@@ -91,57 +130,58 @@ function generateCaches(
   for (let x = -neighborhoodSize; x <= neighborhoodSize; x++) {
     for (let y = -neighborhoodSize; y <= neighborhoodSize; y++) {
       const positionKey = `${x},${y}`;
-      const randomValue = luck(positionKey);
 
-      if (randomValue < CACHE_SPAWN_PROBABILITY) {
-        const lat = center.lat + x * tileDegrees;
-        const lng = center.lng + y * tileDegrees;
-        const position = leaflet.latLng(lat, lng);
+      if (!caches.has(positionKey)) { // making sure caches are not repeated
+        const randomValue = luck(positionKey);
+        if (randomValue < CACHE_SPAWN_PROBABILITY) {
+          const lat = center.lat + x * tileDegrees;
+          const lng = center.lng + y * tileDegrees;
+          const position = leaflet.latLng(lat, lng);
 
-        // Used YazmynS's code (for this) to understand how to write this and what it does
-        // I used their code in my file to generate deterministically generated coins
-        const coins =
-          Math.floor(luck([x, y, "initialValue"].toString()) * 100) + 1;
+          // Used YazmynS's code (for this) to understand how to write this and what it does
+          // I used their code in my file to generate deterministically generated coins
+          const coins =
+            Math.floor(luck([x, y, "initialValue"].toString()) * 100) + 1;
 
-        const cacheMarker = leaflet.marker(position, { icon: redIcon }).addTo(
-          map,
-        );
-
-        // Used the example (and asked Brace a little) to help me understand this and use it
-        const popupContent = `
-          <div>
-            <p>Cache at (${lat.toFixed(5)}, ${lng.toFixed(5)})</p>
-            <p>Coins: <span id="coin-count-${positionKey}">${coins}</span></p>
-            <button id="add-coin-${positionKey}">Add Coin</button>
-            <button id="remove-coin-${positionKey}">Remove Coin</button>
-          </div>
-        `;
-        cacheMarker.bindPopup(popupContent);
-
-        // Store cache details in the Map
-        caches.set(positionKey, { coins, marker: cacheMarker });
-
-        cacheMarker.on("popupopen", () => {
-          const addCoinButton = document.getElementById(
-            `add-coin-${positionKey}`,
+          const cacheIntrinsic = CacheFactory.getCacheType(
+            "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
           );
-          const removeCoinButton = document.getElementById(
-            `remove-coin-${positionKey}`,
+          const cacheMarker = leaflet.marker(position, {
+            icon: cacheIntrinsic.icon,
+          }).addTo(map);
+          cacheMarker.bindPopup(
+            cacheIntrinsic.popupTemplate(positionKey, position, coins),
           );
 
-          // Used Brace to help cut down on repetitive code
-          // short-form version of adding event listeners
-          addCoinButton?.addEventListener("click", () => addCoins(positionKey));
-          removeCoinButton?.addEventListener(
-            "click",
-            () => removeCoins(positionKey),
-          );
-        });
+          caches.set(positionKey, { coins, marker: cacheMarker });
+
+          cacheMarker.on("popupopen", () => {
+            const addCoinButton = document.getElementById(
+              `add-coin-${positionKey}`,
+            );
+            const removeCoinButton = document.getElementById(
+              `remove-coin-${positionKey}`,
+            );
+
+            // Used Brace to help cut down on repetitive code
+            // short-form version of adding event listeners
+            addCoinButton?.addEventListener(
+              "click",
+              () => addCoins(positionKey),
+            );
+            removeCoinButton?.addEventListener(
+              "click",
+              () => removeCoins(positionKey),
+            );
+          });
+        }
       }
     }
   }
 }
 
+// Add coin to a cache
+// Coins do not yet have serialized numbers (needs to be implemented)
 function addCoins(positionKey: string) {
   const cache = caches.get(positionKey);
   if (cache && playerCoins > 0) {
@@ -153,7 +193,8 @@ function addCoins(positionKey: string) {
   }
 }
 
-// Remove coin from a cache (player takes a coin from the cache)
+// Remove coin from a cache
+// Add to the player's count/total
 function removeCoins(positionKey: string) {
   const cache = caches.get(positionKey);
   if (cache && cache.coins > 0) {
@@ -167,10 +208,10 @@ function removeCoins(positionKey: string) {
 
 function updateCoinCountDisplay(positionKey: string, coinCount: number) {
   const coinCountElement = document.getElementById(`coin-count-${positionKey}`);
-  if (coinCountElement) { //Used Brace to help write this
+  if (coinCountElement) {
     coinCountElement.textContent = coinCount.toString();
   }
 }
 
-// Generate caches around the player's initial location (fixed location for testing purposes)
+// Generate caches around the player's initial location
 generateCaches(OAKES_CLASSROOM, NEIGHBORHOOD_SIZE, TILE_DEGREES);
