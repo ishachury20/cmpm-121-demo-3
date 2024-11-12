@@ -75,12 +75,14 @@ interface Cache {
   marker: leaflet.Marker;
 }
 
+// Used Brace to create this line of code
 const caches: Map<string, Cache> = new Map();
 
 function updatePlayerCoinsDisplay() {
   statusPanel.innerHTML = `Player Coins: ${playerCoins}`;
 }
 
+// Talked to Jack O'Brien and Jacky Sanchez to help understand how to create this function (asked them for a general understanding of how this assignment was supposed to be done)
 function generateCaches(
   center: leaflet.LatLng,
   neighborhoodSize: number,
@@ -119,7 +121,6 @@ function generateCaches(
         // Store cache details in the Map
         caches.set(positionKey, { coins, marker: cacheMarker });
 
-        // Event listener for when the popup opens
         cacheMarker.on("popupopen", () => {
           const addCoinButton = document.getElementById(
             `add-coin-${positionKey}`,
@@ -128,10 +129,9 @@ function generateCaches(
             `remove-coin-${positionKey}`,
           );
 
-          // Add coin functionality
+          // Used Brace to help cut down on repetitive code
+          // short-form version of adding event listeners
           addCoinButton?.addEventListener("click", () => addCoins(positionKey));
-
-          // Remove coin functionality
           removeCoinButton?.addEventListener(
             "click",
             () => removeCoins(positionKey),
