@@ -50,6 +50,9 @@ const playerMarker = leaflet.marker(OAKES_CLASSROOM);
 playerMarker.bindTooltip("That's you!");
 playerMarker.addTo(map);
 
+const statusPanel = document.querySelector<HTMLDivElement>("#statusPanel")!;
+statusPanel.innerHTML = `Player has no coins`;
+
 // This interface is specifically created for the icon/pop-up used on all caches
 interface CacheIntrinsic {
   icon: leaflet.Icon;
@@ -196,7 +199,6 @@ function generateCaches(
               }
             });
           });
-
           caches.set(positionKey, { coins, marker: cacheMarker });
         }
       }
@@ -205,6 +207,7 @@ function generateCaches(
 }
 
 // Used Brace to help refine these functions
+
 function addCoins(lat: number, lng: number) {
   const positionKey = `${lat},${lng}`;
   const cache = caches.get(positionKey);
@@ -215,8 +218,12 @@ function addCoins(lat: number, lng: number) {
         serial: coinToTransfer.serial,
         latLng: leaflet.latLng(lat, lng),
       });
+      statusPanel.innerHTML =
+        `Collected coin #${coinToTransfer.serial} from cache (${
+          lat.toFixed(5)
+        }, ${lng.toFixed(5)})`;
       console.log(
-        `Collected coin #${coinToTransfer.serial} from cache (${lat}, ${lng}).`,
+        `Collected coin #${coinToTransfer.serial} from cache (${lat}, ${lng})`,
       );
     }
   }
@@ -233,8 +240,12 @@ function depositCoin(lat: number, lng: number) {
         initialLat: lat,
         initialLng: lng,
       });
+      statusPanel.innerHTML =
+        `Deposited coin #${coinToDeposit.serial} into cache (${
+          lat.toFixed(5)
+        }, ${lng.toFixed(5)})`;
       console.log(
-        `Deposited coin #${coinToDeposit.serial} into cache (${lat}, ${lng}).`,
+        `Deposited coin #${coinToDeposit.serial} into cache (${lat}, ${lng})`,
       );
     }
   }
