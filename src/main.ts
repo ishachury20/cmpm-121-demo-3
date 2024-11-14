@@ -60,7 +60,6 @@ playerMarker.addTo(map);
 interface CacheIntrinsic {
   icon: leaflet.Icon;
   popupTemplate: (
-    positionKey: string,
     latLng: leaflet.LatLng,
     coins: number,
   ) => string;
@@ -100,15 +99,14 @@ class CacheFactory {
 
       // Used the example (and asked Brace a little) to help me understand this and use it
       const popupTemplate = (
-        positionKey: string,
         latLng: leaflet.LatLng,
         coins: number,
       ) => `
         <div>
           <p>Cache at (${latLng.lat.toFixed(5)}, ${latLng.lng.toFixed(5)})</p>
-          <p>Coins: <span id="coin-count-${positionKey}">${coins}</span></p>
-          <button id="add-coin-${positionKey}">Add Coin</button>
-          <button id="remove-coin-${positionKey}">Remove Coin</button>
+          <p>Coins: <span id="coin-count-${latLng.lat}, ${latLng.lng}">${coins}</span></p>
+          <button id="add-coin-${latLng.lat}, ${latLng.lng}">Add Coin</button>
+          <button id="remove-coin-${latLng.lat}, ${latLng.lng}}">Remove Coin</button>
         </div>
       `;
 
@@ -129,6 +127,7 @@ const caches: Map<string, Cache> = new Map();
 // }
 
 // Talked to Jack O'Brien and Jacky Sanchez to help understand how to create this function (asked them for a general understanding of how this assignment was supposed to be done)
+// Got rid of the positionkey system in the first implementation, and based this solely on coordinate positions
 function generateCaches(
   center: leaflet.LatLng,
   neighborhoodSize: number,
@@ -136,15 +135,14 @@ function generateCaches(
 ) {
   for (let x = -neighborhoodSize; x <= neighborhoodSize; x++) {
     for (let y = -neighborhoodSize; y <= neighborhoodSize; y++) {
-      const positionKey = `${x},${y}`;
+      const lat = center.lat + x * tileDegrees;
+      const lng = center.lng + y * tileDegrees;
+      const position = leaflet.latLng(lat, lng);
+      const positionKey = `${lat}, ${lng}`;
 
       if (!caches.has(positionKey)) { // making sure caches are not repeated
         const randomValue = luck(positionKey);
         if (randomValue < CACHE_SPAWN_PROBABILITY) {
-          const lat = center.lat + x * tileDegrees;
-          const lng = center.lng + y * tileDegrees;
-          const position = leaflet.latLng(lat, lng);
-
           // Used YazmynS's code (for this) to understand how to write this and what it does
           // I used their code in my file to generate deterministically generated coins
           const num_coins =
@@ -166,7 +164,7 @@ function generateCaches(
             icon: cacheIntrinsic.icon,
           }).addTo(map);
           cacheMarker.bindPopup(
-            cacheIntrinsic.popupTemplate(positionKey, position, coins.length),
+            cacheIntrinsic.popupTemplate(position, coins.length),
           );
 
           caches.set(positionKey, { coins, marker: cacheMarker });
