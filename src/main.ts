@@ -108,22 +108,22 @@ class CacheFactory {
       // Pop-up that appears when user hovers over a location (red icon)
       // Used the example (and asked Brace a little) to help me understand this and use it
       const popupTemplate = (latLng: leaflet.LatLng, coins: Coin[]) => `
-      <div>
-      <p>Cache at (${latLng.lat.toFixed(5)}, ${latLng.lng.toFixed(5)})</p>
-      <p>Coins: <span id="coin-count-${latLng.lat},${latLng.lng}">${coins.length}</span></p>
-      <div class="scroll-container">
-        <ul>
-          ${
+      <div id="popup-${latLng.lat},${latLng.lng}">
+        <p>Cache at (${latLng.lat.toFixed(5)}, ${latLng.lng.toFixed(5)})</p>
+        <p>Coins: <span id="coin-count-${latLng.lat},${latLng.lng}">${coins.length}</span></p>
+        <div class="scroll-container">
+          <ul>
+            ${
         coins.map((coin) => `
-            <li>Serial: ${coin.serial} - Location: (${
+              <li>Serial: ${coin.serial} - Location: (${
           coin.initialLat.toFixed(5)
         }, ${coin.initialLng.toFixed(5)})</li>
-          `).join("")
+            `).join("")
       }
-        </ul>
-      </div>
-      <button id="add-coin-${latLng.lat},${latLng.lng}">Collect Coin</button>
-      <button id="remove-coin-${latLng.lat},${latLng.lng}">Deposit Coin</button>
+          </ul>
+        </div>
+        <button id="add-coin-${latLng.lat},${latLng.lng}">Collect Coin</button>
+        <button id="remove-coin-${latLng.lat},${latLng.lng}">Deposit Coin</button>
       </div>
       `;
 
@@ -219,19 +219,28 @@ function generateCaches(
 function addCoins(lat: number, lng: number) {
   const positionKey = `${lat},${lng}`;
   const cache = caches.get(positionKey);
+
   if (cache && cache.coins.length > 0) {
     const coinToTransfer = cache.coins.pop(); // Removing a coin from the cache
+
     if (coinToTransfer) {
       userCoins.push({
         serial: coinToTransfer.serial,
         latLng: leaflet.latLng(lat, lng),
       });
+
       statusPanel.innerHTML =
         `Collected coin #${coinToTransfer.serial} from cache (${
           lat.toFixed(5)
         }, ${lng.toFixed(5)})`;
       console.log(`Remaining coins in cache at (${lat}, ${lng}):`, cache.coins);
       console.log("User Coins List:", userCoins);
+
+      // Update the pop-up coin count
+      const coinCountElem = document.getElementById(`coin-count-${lat},${lng}`);
+      if (coinCountElem) {
+        coinCountElem.textContent = `${cache.coins.length}`;
+      }
     }
   }
 }
@@ -239,6 +248,7 @@ function addCoins(lat: number, lng: number) {
 function depositCoin(lat: number, lng: number) {
   const positionKey = `${lat},${lng}`;
   const cache = caches.get(positionKey);
+
   if (userCoins.length > 0) {
     const coinToDeposit = userCoins.pop(); // Removing a coin from the player's list
     if (coinToDeposit && cache) {
@@ -247,12 +257,18 @@ function depositCoin(lat: number, lng: number) {
         initialLat: lat,
         initialLng: lng,
       });
+
       statusPanel.innerHTML =
         `Deposited coin #${coinToDeposit.serial} into cache (${
           lat.toFixed(5)
         }, ${lng.toFixed(5)})`;
       console.log(`Updated coins in cache at (${lat}, ${lng}):`, cache.coins);
       console.log("User Coins List:", userCoins);
+
+      const coinCountElem = document.getElementById(`coin-count-${lat},${lng}`);
+      if (coinCountElem) {
+        coinCountElem.textContent = `${cache.coins.length}`;
+      }
     }
   }
 }
