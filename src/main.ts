@@ -291,7 +291,6 @@ function depositCoin(lat: number, lng: number) {
     const coinToDeposit = userCoins.pop(); // Remove a coin from the user's list
 
     if (coinToDeposit) {
-      // Ensure the original coordinates (initialLat, initialLng) are preserved
       const depositedCoin: Coin = {
         serial: coinToDeposit.serial,
         initialLat: coinToDeposit.initialLat,
@@ -309,7 +308,6 @@ function depositCoin(lat: number, lng: number) {
       console.log(`Updated coins in cache at (${lat}, ${lng}):`, cache.coins);
       console.log("User Coins List:", userCoins);
 
-      // Update the pop-up coin count
       const coinCountElem = document.getElementById(`coin-count-${lat},${lng}`);
       if (coinCountElem) {
         coinCountElem.textContent = `${cache.coins.length}`;
