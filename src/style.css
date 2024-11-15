@@ -95,3 +95,25 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+/* Used ChatGPT to creates the scroll container and understand how it worked */
+/* Prompt given: Help me create a scroll-bar for the pop-up window over my caches and help me understand what this code means */
+.scroll-container {
+  max-height: 150px; /* Adjust the height as needed */
+  overflow-y: auto;
+  border: 1px solid #ccc;
+  padding: 5px;
+  margin-bottom: 10px;
+  background-color: #f9f9f9; /* Optional: Add a background color */
+}
+
+.scroll-container ul {
+  margin: 0;
+  padding: 0;
+  list-style-type: none;
+}
+
+.scroll-container li {
+  padding: 5px 0;
+  border-bottom: 1px solid #ddd; /* Optional: Add a separator for readability */
+}

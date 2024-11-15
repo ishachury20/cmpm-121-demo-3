@@ -58,7 +58,7 @@ interface CacheIntrinsic {
   icon: leaflet.Icon;
   popupTemplate: (
     latLng: leaflet.LatLng,
-    coins: number,
+    coins: Coin[],
   ) => string;
 }
 
@@ -107,17 +107,25 @@ class CacheFactory {
 
       // Pop-up that appears when user hovers over a location (red icon)
       // Used the example (and asked Brace a little) to help me understand this and use it
-      const popupTemplate = (
-        latLng: leaflet.LatLng,
-        coins: number,
-      ) => `
-       <div>
-         <p>Cache at (${latLng.lat.toFixed(5)}, ${latLng.lng.toFixed(5)})</p>
-         <p>Coins: <span id="coin-count-${latLng.lat},${latLng.lng}">${coins}</span></p>
-         <button id="add-coin-${latLng.lat},${latLng.lng}">Collect Coin</button>
-         <button id="remove-coin-${latLng.lat},${latLng.lng}">Deposit Coin</button>
-       </div>
-     `;
+      const popupTemplate = (latLng: leaflet.LatLng, coins: Coin[]) => `
+      <div>
+      <p>Cache at (${latLng.lat.toFixed(5)}, ${latLng.lng.toFixed(5)})</p>
+      <p>Coins: <span id="coin-count-${latLng.lat},${latLng.lng}">${coins.length}</span></p>
+      <div class="scroll-container">
+        <ul>
+          ${
+        coins.map((coin) => `
+            <li>Serial: ${coin.serial} - Location: (${
+          coin.initialLat.toFixed(5)
+        }, ${coin.initialLng.toFixed(5)})</li>
+          `).join("")
+      }
+        </ul>
+      </div>
+      <button id="add-coin-${latLng.lat},${latLng.lng}">Collect Coin</button>
+      <button id="remove-coin-${latLng.lat},${latLng.lng}">Deposit Coin</button>
+      </div>
+      `;
 
       cacheType = { icon, popupTemplate };
       CacheFactory.cacheTypes.set(iconUrl, cacheType);
@@ -175,7 +183,7 @@ function generateCaches(
           }).addTo(map);
 
           cacheMarker.bindPopup(
-            cacheIntrinsic.popupTemplate(position, coins.length),
+            cacheIntrinsic.popupTemplate(position, coins),
           );
 
           cacheMarker.on("popupopen", () => {
@@ -222,9 +230,8 @@ function addCoins(lat: number, lng: number) {
         `Collected coin #${coinToTransfer.serial} from cache (${
           lat.toFixed(5)
         }, ${lng.toFixed(5)})`;
-      console.log(
-        `Collected coin #${coinToTransfer.serial} from cache (${lat}, ${lng})`,
-      );
+      console.log(`Remaining coins in cache at (${lat}, ${lng}):`, cache.coins);
+      console.log("User Coins List:", userCoins);
     }
   }
 }
@@ -244,9 +251,8 @@ function depositCoin(lat: number, lng: number) {
         `Deposited coin #${coinToDeposit.serial} into cache (${
           lat.toFixed(5)
         }, ${lng.toFixed(5)})`;
-      console.log(
-        `Deposited coin #${coinToDeposit.serial} into cache (${lat}, ${lng})`,
-      );
+      console.log(`Updated coins in cache at (${lat}, ${lng}):`, cache.coins);
+      console.log("User Coins List:", userCoins);
     }
   }
 }
