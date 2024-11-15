@@ -79,6 +79,8 @@ interface Coin {
 interface UserCoin {
   serial: number;
   latLng: leaflet.LatLng;
+  initialLat: number;
+  initialLng: number;
 }
 
 const caches: Map<string, Cache> = new Map(); // Cache storage using lat, lng as keys
@@ -214,6 +216,38 @@ function generateCaches(
   }
 }
 
+function updatePopupContent(lat: number, lng: number) {
+  const positionKey = `${lat},${lng}`;
+  const cache = caches.get(positionKey);
+
+  if (cache) {
+    const popupContent = `
+      <p>Cache at (${lat.toFixed(5)}, ${lng.toFixed(5)})</p>
+      <p>Coins: <span id="coin-count-${lat},${lng}">${cache.coins.length}</span></p>
+      <div class="scroll-container">
+        <ul>
+          ${
+      cache.coins.map((coin) => `
+              <li>Serial: ${coin.serial} - Location: (${
+        coin.initialLat.toFixed(5)
+      }, ${coin.initialLng.toFixed(5)})</li>
+            `).join("")
+    }
+        </ul>
+      </div>
+      <button id="add-coin-${lat},${lng}">Collect Coin</button>
+      <button id="remove-coin-${lat},${lng}">Deposit Coin</button>
+    `;
+
+    const currentPopup = cache.marker.getPopup();
+    if (!currentPopup) {
+      cache.marker.bindPopup(popupContent).openPopup();
+    } else {
+      currentPopup.setContent(popupContent);
+    }
+  }
+}
+
 // Used Brace to help refine these functions
 
 function addCoins(lat: number, lng: number) {
@@ -227,12 +261,16 @@ function addCoins(lat: number, lng: number) {
       userCoins.push({
         serial: coinToTransfer.serial,
         latLng: leaflet.latLng(lat, lng),
+        initialLat: coinToTransfer.initialLat,
+        initialLng: coinToTransfer.initialLng,
       });
 
+      updatePopupContent(lat, lng);
       statusPanel.innerHTML =
         `Collected coin #${coinToTransfer.serial} from cache (${
           lat.toFixed(5)
         }, ${lng.toFixed(5)})`;
+
       console.log(`Remaining coins in cache at (${lat}, ${lng}):`, cache.coins);
       console.log("User Coins List:", userCoins);
 
@@ -249,22 +287,29 @@ function depositCoin(lat: number, lng: number) {
   const positionKey = `${lat},${lng}`;
   const cache = caches.get(positionKey);
 
-  if (userCoins.length > 0) {
-    const coinToDeposit = userCoins.pop(); // Removing a coin from the player's list
-    if (coinToDeposit && cache) {
-      cache.coins.push({
-        serial: coinToDeposit.serial,
-        initialLat: lat,
-        initialLng: lng,
-      });
+  if (userCoins.length > 0 && cache) {
+    const coinToDeposit = userCoins.pop(); // Remove a coin from the user's list
 
+    if (coinToDeposit) {
+      // Ensure the original coordinates (initialLat, initialLng) are preserved
+      const depositedCoin: Coin = {
+        serial: coinToDeposit.serial,
+        initialLat: coinToDeposit.initialLat,
+        initialLng: coinToDeposit.initialLng,
+      };
+
+      cache.coins.push(depositedCoin);
+
+      updatePopupContent(lat, lng);
       statusPanel.innerHTML =
         `Deposited coin #${coinToDeposit.serial} into cache (${
           lat.toFixed(5)
         }, ${lng.toFixed(5)})`;
+
       console.log(`Updated coins in cache at (${lat}, ${lng}):`, cache.coins);
       console.log("User Coins List:", userCoins);
 
+      // Update the pop-up coin count
       const coinCountElem = document.getElementById(`coin-count-${lat},${lng}`);
       if (coinCountElem) {
         coinCountElem.textContent = `${cache.coins.length}`;
