@@ -19,11 +19,11 @@ app.prepend(header);
 // Tested for other locations with Jacky's help (over a discord call)
 const OAKES_CLASSROOM = leaflet.latLng(36.98949379578401, -122.06277128548504);
 const GAMEPLAY_ZOOM_LEVEL = 19;
-const TILE_DEGREES = 1e-4;
+const TILE_DEGREES = 1e-4; //0.0001
 const NEIGHBORHOOD_SIZE = 8;
 const CACHE_SPAWN_PROBABILITY = 0.1;
 
-// Create the map
+// Create the map (element with id "map" is defined in index.html)
 const map = leaflet.map(document.getElementById("map")!, {
   center: OAKES_CLASSROOM,
   zoom: GAMEPLAY_ZOOM_LEVEL,
@@ -47,26 +47,57 @@ const playerMarker = leaflet.marker(OAKES_CLASSROOM);
 playerMarker.bindTooltip("That's you!");
 playerMarker.addTo(map);
 
+document.addEventListener("DOMContentLoaded", () => {
+  // Movement increment (change as you see fit)
+  const moveDistance = TILE_DEGREES; // This could be any suitable value
+
+  // Function to update player's position
+  function movePlayer(latChange: number, lngChange: number) {
+    const currentPosition = playerMarker.getLatLng();
+    const newLat = currentPosition.lat + latChange;
+    const newLng = currentPosition.lng + lngChange;
+    playerMarker.setLatLng([newLat, newLng]);
+    map.panTo([newLat, newLng]); // recenters the map if desired
+  }
+
+  // Event listeners for movement buttons
+  const northButton = document.getElementById("north")!;
+  northButton.addEventListener("click", () => movePlayer(moveDistance, 0));
+
+  const southButton = document.getElementById("south")!;
+  southButton.addEventListener("click", () => movePlayer(-moveDistance, 0));
+
+  const eastButton = document.getElementById("east")!;
+  eastButton.addEventListener("click", () => movePlayer(0, moveDistance));
+
+  const westButton = document.getElementById("west")!;
+  westButton.addEventListener("click", () => movePlayer(0, -moveDistance));
+});
+
 const statusPanel = document.querySelector<HTMLDivElement>("#statusPanel")!;
 statusPanel.innerHTML = `Player has no coins`;
 
 // Interfaces for cache, coin, and user coins
+// This interface is specifically created for the icon/pop-up used on all caches
 interface CacheIntrinsic {
   icon: leaflet.Icon;
   popupTemplate: (latLng: leaflet.LatLng, coins: Coin[]) => string;
 }
 
+// This interface is for the cache itself (not the visual aspects of it)
 interface Cache {
   coins: Coin[];
   marker: leaflet.Marker;
 }
 
+// This interface is used for the coin/token the player can collect or depoit to other caches
 interface Coin {
   serial: number; // Serial number for each coin
   initialLat: number; // x-coordinate
   initialLng: number; // y-coordinate
 }
 
+// This interface is for all of the coins the user currently has
 interface UserCoin {
   serial: number;
   latLng: leaflet.LatLng;
@@ -79,6 +110,8 @@ const caches: Map<string, Cache> = new Map();
 const userCoins: UserCoin[] = [];
 
 // Cell class for Flyweight pattern
+// I went to Ishaan's office hours to help understand how to approach this function and his help in debugging
+// I also used Brace to help write some parts of the code
 class Cell {
   static cellInstances: Map<string, Cell> = new Map();
   private constructor(public readonly i: number, public readonly j: number) {}
@@ -97,7 +130,12 @@ class Cell {
   }
 }
 
-// CacheFactory implementing Flyweight pattern
+// I used Brace to help me create and understand this code to implement the flyweight pattern
+// Brace suggested to create an interface for the cache (surrounding the pop-ups) and a class that managed the pop-up
+// Most of the code used in this is from Brace, though I did go through it to understand it and add to it
+// The cachefactory checks if there is already an existing icon in the location and if not creates an icon there, and attaching a pop-up
+// CacheIntrinsic and CacheFactory are used to implement the flyweight pattern
+
 class CacheFactory {
   private static cacheTypes: Map<string, CacheIntrinsic> = new Map();
 
@@ -112,6 +150,9 @@ class CacheFactory {
         popupAnchor: [1, -34],
         tooltipAnchor: [16, -28],
       });
+
+      // Pop-up that appears when user hovers over a location (red icon)
+      // Used the example (and asked Brace a little) to help me understand this and use it
 
       const popupTemplate = (latLng: leaflet.LatLng, coins: Coin[]) => `
         <div id="popup-${latLng.lat},${latLng.lng}">
@@ -130,7 +171,11 @@ class CacheFactory {
   }
 }
 
-// Function to generate caches
+// Talked to Jack O'Brien and Jacky Sanchez to help understand how to create this function (asked them for a general understanding of how this assignment was supposed to be done)
+// Got rid of the positionkey system in the first implementation, and based this solely on coordinate positions
+// Talked to Jacky about her implementation and used a similar idea (in which there is a list for all coins in a specific cache as well as a list containing all of the player's coins)
+// Coins are popped from one list to another to keep track of which cache they end up in
+
 function generateCaches(
   center: leaflet.LatLng,
   neighborhoodSize: number,
@@ -143,9 +188,12 @@ function generateCaches(
       const cell = Cell.getCell(lat, lng);
       const positionKey = `${cell.i},${cell.j}`;
 
-      if (!caches.has(positionKey)) {
+      if (!caches.has(positionKey)) { // making sure caches are not repeated
         const randomValue = luck(positionKey);
         if (randomValue < CACHE_SPAWN_PROBABILITY) {
+          // Used YazmynS's code (for this) to understand how to write this and what it does
+          // I used their code in my file to generate deterministically generated coins
+
           const num_coins = Math.floor(
             luck([lat, lng, "initialValue"].toString()) * 100,
           ) + 1;
@@ -157,6 +205,10 @@ function generateCaches(
               initialLng: lng,
             });
           }
+
+          // Used ChatGPT to help me write this code
+          // Prompt: Help me deterministically generate locations using these interfaces that implement the flyweight pattern
+          // I inputted my code and iterated on the prompts to get correct(ish) responses
 
           const cacheIntrinsic = CacheFactory.getCacheType(
             "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
@@ -195,8 +247,6 @@ function generateCaches(
     }
   }
 }
-
-//statusPanel.innerHTML = `Collected coin #${coinToTransfer.serial}`;
 
 // Functions for coin collection and deposit
 function addCoins(i: number, j: number, lat: number, lng: number) {
