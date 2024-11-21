@@ -60,6 +60,7 @@ document.addEventListener("DOMContentLoaded", () => {
     map.panTo([newLat, newLng]);
 
     generateCaches(playerMarker.getLatLng(), NEIGHBORHOOD_SIZE, TILE_DEGREES); // add visibility later
+    updateVisibleCaches(playerMarker.getLatLng(), 40);
   }
 
   const northButton = document.getElementById("north")!;
@@ -318,5 +319,20 @@ function depositCoin(i: number, j: number, lat: number, lng: number) {
   }
 }
 
-// Anchored at Oakes Classroom
+function updateVisibleCaches(center: leaflet.LatLng, radius: number) {
+  caches.forEach((cache, key) => {
+    const distance = center.distanceTo(cache.marker.getLatLng());
+    if (distance <= radius) {
+      if (!map.hasLayer(cache.marker)) {
+        cache.marker.addTo(map);
+        console.log(`Cache ${key} shown.`);
+      }
+    } else if (map.hasLayer(cache.marker)) {
+      map.removeLayer(cache.marker);
+      console.log(`Cache ${key} hidden.`);
+    }
+  });
+}
+
 generateCaches(OAKES_CLASSROOM, NEIGHBORHOOD_SIZE, TILE_DEGREES);
+updateVisibleCaches(OAKES_CLASSROOM, 40);
