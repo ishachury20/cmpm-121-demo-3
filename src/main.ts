@@ -1,6 +1,5 @@
 // @deno-types="npm:@types/leaflet@^1.9.14"
 import leaflet from "leaflet";
-
 import "leaflet/dist/leaflet.css"; // Style sheets
 import "./style.css";
 import "./leafletWorkaround.ts";
@@ -19,7 +18,7 @@ app.prepend(header);
 // Tested for other locations with Jacky's help (over a discord call)
 const OAKES_CLASSROOM = leaflet.latLng(36.98949379578401, -122.06277128548504);
 const GAMEPLAY_ZOOM_LEVEL = 19;
-const TILE_DEGREES = 1e-4; //0.0001
+const TILE_DEGREES = 1e-4;
 const NEIGHBORHOOD_SIZE = 8;
 const CACHE_SPAWN_PROBABILITY = 0.1;
 
@@ -47,35 +46,37 @@ const playerMarker = leaflet.marker(OAKES_CLASSROOM);
 playerMarker.bindTooltip("That's you!");
 playerMarker.addTo(map);
 
-document.addEventListener("DOMContentLoaded", () => {
-  // Movement increment (change as you see fit)
-  const moveDistance = TILE_DEGREES; // This could be any suitable value
+const statusPanel = document.querySelector<HTMLDivElement>("#statusPanel")!;
+statusPanel.innerHTML = `Player has no coins`;
 
-  // Function to update player's position
+document.addEventListener("DOMContentLoaded", () => {
+  const moveDistance = TILE_DEGREES; // move by 0.0001
+
   function movePlayer(latChange: number, lngChange: number) {
     const currentPosition = playerMarker.getLatLng();
     const newLat = currentPosition.lat + latChange;
     const newLng = currentPosition.lng + lngChange;
     playerMarker.setLatLng([newLat, newLng]);
-    map.panTo([newLat, newLng]); // recenters the map if desired
+    map.panTo([newLat, newLng]);
+
+    generateCaches(playerMarker.getLatLng(), NEIGHBORHOOD_SIZE, TILE_DEGREES); // add visibility later
   }
 
-  // Event listeners for movement buttons
   const northButton = document.getElementById("north")!;
   northButton.addEventListener("click", () => movePlayer(moveDistance, 0));
-
   const southButton = document.getElementById("south")!;
   southButton.addEventListener("click", () => movePlayer(-moveDistance, 0));
-
   const eastButton = document.getElementById("east")!;
   eastButton.addEventListener("click", () => movePlayer(0, moveDistance));
-
   const westButton = document.getElementById("west")!;
   westButton.addEventListener("click", () => movePlayer(0, -moveDistance));
 });
 
-const statusPanel = document.querySelector<HTMLDivElement>("#statusPanel")!;
-statusPanel.innerHTML = `Player has no coins`;
+// Interfaace to implement the momento pattern
+interface Memento<T> {
+  toMemento(): T;
+  fromMemento(memento: T): void;
+}
 
 // Interfaces for cache, coin, and user coins
 // This interface is specifically created for the icon/pop-up used on all caches
@@ -84,17 +85,23 @@ interface CacheIntrinsic {
   popupTemplate: (latLng: leaflet.LatLng, coins: Coin[]) => string;
 }
 
+interface CacheState {
+  coins: Coin[];
+  latLng: leaflet.LatLng;
+}
+
 // This interface is for the cache itself (not the visual aspects of it)
-interface Cache {
+// Extended to use the momento pattern
+interface Cache extends Memento<string> {
   coins: Coin[];
   marker: leaflet.Marker;
 }
 
 // This interface is used for the coin/token the player can collect or depoit to other caches
 interface Coin {
-  serial: number; // Serial number for each coin
-  initialLat: number; // x-coordinate
-  initialLng: number; // y-coordinate
+  serial: number;
+  initialLat: number;
+  initialLng: number;
 }
 
 // This interface is for all of the coins the user currently has
@@ -112,6 +119,7 @@ const userCoins: UserCoin[] = [];
 // Cell class for Flyweight pattern
 // I went to Ishaan's office hours to help understand how to approach this function and his help in debugging
 // I also used Brace to help write some parts of the code
+
 class Cell {
   static cellInstances: Map<string, Cell> = new Map();
   private constructor(public readonly i: number, public readonly j: number) {}
@@ -120,7 +128,6 @@ class Cell {
     const i = Math.floor(lat / TILE_DEGREES);
     const j = Math.floor(lng / TILE_DEGREES);
     const cellKey = `${i},${j}`;
-
     let cell = Cell.cellInstances.get(cellKey);
     if (!cell) {
       cell = new Cell(i, j);
@@ -141,7 +148,6 @@ class CacheFactory {
 
   public static getCacheType(iconUrl: string): CacheIntrinsic {
     let cacheType = CacheFactory.cacheTypes.get(iconUrl);
-
     if (!cacheType) {
       const icon = leaflet.icon({
         iconUrl,
@@ -161,13 +167,37 @@ class CacheFactory {
           <button id="add-coin-${latLng.lat},${latLng.lng}">Collect Coin</button>
           <button id="remove-coin-${latLng.lat},${latLng.lng}">Deposit Coin</button>
         </div>
-        `;
-
+      `;
       cacheType = { icon, popupTemplate };
       CacheFactory.cacheTypes.set(iconUrl, cacheType);
     }
-
     return cacheType;
+  }
+}
+
+class Geocache implements Cache {
+  coins: Coin[];
+  marker: leaflet.Marker;
+
+  constructor(coins: Coin[], marker: leaflet.Marker) {
+    this.coins = coins;
+    this.marker = marker;
+  }
+
+  // Convert cache state to a string
+  toMemento(): string {
+    const state: CacheState = {
+      coins: [...this.coins],
+      latLng: this.marker.getLatLng(),
+    };
+    return JSON.stringify(state);
+  }
+
+  // Restore cache state from a string
+  fromMemento(memento: string) {
+    const state: CacheState = JSON.parse(memento);
+    this.coins = state.coins;
+    this.marker.setLatLng(state.latLng);
   }
 }
 
@@ -187,23 +217,17 @@ function generateCaches(
       const lng = center.lng + y * tileDegrees;
       const cell = Cell.getCell(lat, lng);
       const positionKey = `${cell.i},${cell.j}`;
-
-      if (!caches.has(positionKey)) { // making sure caches are not repeated
+      if (!caches.has(positionKey)) { // Only generate if cache does not exist
         const randomValue = luck(positionKey);
         if (randomValue < CACHE_SPAWN_PROBABILITY) {
           // Used YazmynS's code (for this) to understand how to write this and what it does
           // I used their code in my file to generate deterministically generated coins
 
-          const num_coins = Math.floor(
-            luck([lat, lng, "initialValue"].toString()) * 100,
-          ) + 1;
+          const num_coins =
+            Math.floor(luck([lat, lng, "initialValue"].toString()) * 100) + 1;
           const coins: Coin[] = [];
           for (let i = 0; i < num_coins; i++) {
-            coins.push({
-              serial: i,
-              initialLat: lat,
-              initialLng: lng,
-            });
+            coins.push({ serial: i, initialLat: lat, initialLng: lng });
           }
 
           // Used ChatGPT to help me write this code
@@ -229,11 +253,9 @@ function generateCaches(
             const removeCoinButton = document.getElementById(
               `remove-coin-${lat},${lng}`,
             );
-
             addCoinButton?.addEventListener("click", () => {
               addCoins(cell.i, cell.j, lat, lng); // Pass lat and lng
             });
-
             removeCoinButton?.addEventListener("click", () => {
               if (userCoins.length > 0) {
                 depositCoin(cell.i, cell.j, lat, lng);
@@ -241,7 +263,11 @@ function generateCaches(
             });
           });
 
-          caches.set(positionKey, { coins, marker: cacheMarker });
+          const cache = new Geocache(coins, cacheMarker);
+          caches.set(positionKey, cache);
+          console.log(
+            `Cache created at (${lat}, ${lng}) with ${num_coins} coins.`,
+          );
         }
       }
     }
@@ -252,20 +278,17 @@ function generateCaches(
 function addCoins(i: number, j: number, lat: number, lng: number) {
   const positionKey = `${i},${j}`;
   const cache = caches.get(positionKey);
-
   if (cache && cache.coins.length > 0) {
     const coinToTransfer = cache.coins.pop();
     if (coinToTransfer) {
       userCoins.push({
         serial: coinToTransfer.serial,
-        latLng: leaflet.latLng(lat, lng), // Use passed lat and lng
+        latLng: leaflet.latLng(lat, lng),
         initialLat: coinToTransfer.initialLat,
         initialLng: coinToTransfer.initialLng,
       });
-
       statusPanel.innerHTML =
         `Collected at cache ${i},${j}: #${coinToTransfer.serial}`;
-
       const coinCountElem = document.getElementById(`coin-count-${lat},${lng}`);
       if (coinCountElem) {
         coinCountElem.textContent = `${cache.coins.length}`;
@@ -277,21 +300,16 @@ function addCoins(i: number, j: number, lat: number, lng: number) {
 function depositCoin(i: number, j: number, lat: number, lng: number) {
   const positionKey = `${i},${j}`;
   const cache = caches.get(positionKey);
-
   if (userCoins.length > 0 && cache) {
-    const coinToDeposit = userCoins.pop(); // Remove the most recent user coin
+    const coinToDeposit = userCoins.pop();
     if (coinToDeposit) {
       cache.coins.push({
         serial: coinToDeposit.serial,
         initialLat: coinToDeposit.initialLat,
         initialLng: coinToDeposit.initialLng,
       });
-
-      // Update the status panel
       statusPanel.innerHTML =
-        `Deposited at cache ${i}, ${j}: #${coinToDeposit.serial}`;
-
-      // Update the coin count in the cache's popup
+        `Deposited at cache (${i}, ${j}): #${coinToDeposit.serial}`;
       const coinCountElem = document.getElementById(`coin-count-${lat},${lng}`);
       if (coinCountElem) {
         coinCountElem.textContent = `${cache.coins.length}`;
@@ -300,5 +318,5 @@ function depositCoin(i: number, j: number, lat: number, lng: number) {
   }
 }
 
-// Initial cache generation
+// Anchored at Oakes Classroom
 generateCaches(OAKES_CLASSROOM, NEIGHBORHOOD_SIZE, TILE_DEGREES);
