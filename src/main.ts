@@ -275,6 +275,34 @@ function generateCaches(
   }
 }
 
+let geolocationWatchId: number | null = null; // To keep track of the geolocation subscription
+
+document.getElementById("sensor")?.addEventListener("click", () => {
+  if (geolocationWatchId !== null) {
+    navigator.geolocation.clearWatch(geolocationWatchId);
+    geolocationWatchId = null;
+    alert("Geolocation tracking disabled.");
+  } else {
+    alert("Geolocation tracking enabled.");
+    geolocationWatchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        const newLatLng = leaflet.latLng(latitude, longitude);
+        playerMarker.setLatLng(newLatLng);
+        map.panTo(newLatLng);
+
+        // Regenerate caches and update visibility
+        generateCaches(
+          playerMarker.getLatLng(),
+          NEIGHBORHOOD_SIZE,
+          TILE_DEGREES,
+        );
+        updateVisibleCaches(playerMarker.getLatLng(), 40);
+      },
+    );
+  }
+});
+
 // Functions for coin collection and deposit
 function addCoins(i: number, j: number, lat: number, lng: number) {
   const positionKey = `${i},${j}`;
