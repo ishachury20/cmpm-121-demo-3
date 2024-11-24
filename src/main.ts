@@ -266,7 +266,6 @@ function loadGameState() {
       });
     });
 
-    // Restore Caches
     caches.clear(); // Clear existing caches
     for (const key of Object.keys(gameState.caches)) {
       const cacheState = gameState.caches[key];
