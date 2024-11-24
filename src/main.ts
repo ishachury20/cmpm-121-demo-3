@@ -61,6 +61,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     generateCaches(playerMarker.getLatLng(), NEIGHBORHOOD_SIZE, TILE_DEGREES); // add visibility later
     updateVisibleCaches(playerMarker.getLatLng(), 40);
+    saveGameState();
   }
 
   const northButton = document.getElementById("north")!;
@@ -202,6 +203,170 @@ class Geocache implements Cache {
   }
 }
 
+function saveGameState() {
+  const playerPosition = playerMarker.getLatLng();
+
+  // Save player coins as part of the state
+  const playerCoinData = userCoins.map((coin) => ({
+    serial: coin.serial,
+    initialLat: coin.initialLat,
+    initialLng: coin.initialLng,
+  }));
+
+  // Save all caches (but only the visible ones to optimize storage)
+  const cacheData: Record<string, CacheState> = {};
+  caches.forEach((cache, key) => {
+    if (map.hasLayer(cache.marker)) { // Only save visible caches
+      cacheData[key] = {
+        coins: cache.coins,
+        latLng: cache.marker.getLatLng(),
+      };
+    }
+  });
+
+  const gameState = {
+    playerPosition,
+    playerCoins: playerCoinData, // Store player's current coins
+    caches: cacheData,
+  };
+
+  localStorage.setItem("gameState", JSON.stringify(gameState));
+  console.log("Game state saved!");
+}
+
+function loadGameState() {
+  const savedState = localStorage.getItem("gameState");
+  if (savedState) {
+    const gameState = JSON.parse(savedState);
+
+    // Restore Player Position
+    const { lat, lng } = gameState.playerPosition;
+    playerMarker.setLatLng([lat, lng]);
+    map.panTo([lat, lng]);
+
+    // Restore Player Coins
+    userCoins.length = 0; // Clear existing coins to prevent duplicates
+    gameState.playerCoins.forEach((coin: UserCoin) => {
+      userCoins.push({
+        serial: coin.serial,
+        latLng: leaflet.latLng(coin.initialLat, coin.initialLng), // Recreate LatLng
+        initialLat: coin.initialLat,
+        initialLng: coin.initialLng,
+      });
+    });
+
+    // Restore Caches
+    caches.clear(); // Clear existing caches
+    for (const key of Object.keys(gameState.caches)) {
+      const cacheState = gameState.caches[key];
+      const cacheIntrinsic = CacheFactory.getCacheType(
+        "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
+      );
+      const cacheMarker = leaflet.marker(cacheState.latLng, {
+        icon: cacheIntrinsic.icon,
+      });
+
+      // Attach the popup and re-bind events for buttons
+      cacheMarker.bindPopup(
+        cacheIntrinsic.popupTemplate(cacheState.latLng, cacheState.coins),
+      );
+      attachPopupListeners(
+        cacheMarker,
+        cacheState.latLng.lat,
+        cacheState.latLng.lng,
+      );
+
+      // Add cache back to the global cache map
+      caches.set(key, new Geocache(cacheState.coins, cacheMarker));
+    }
+
+    // Reevaluate visibility with the freshly loaded data
+    updateVisibleCaches(playerMarker.getLatLng(), 40);
+
+    console.log("Game state loaded!");
+  } else {
+    console.log("No saved state found.");
+  }
+}
+
+// Regenerate Caches on Load
+document.addEventListener("DOMContentLoaded", () => {
+  loadGameState();
+  globalThis.addEventListener("beforeunload", saveGameState); // Save before closing
+});
+
+function attachPopupListeners(
+  cacheMarker: leaflet.Marker,
+  lat: number,
+  lng: number,
+) {
+  cacheMarker.on("popupopen", () => {
+    const cell = Cell.getCell(lat, lng);
+    const positionKey = `${cell.i},${cell.j}`;
+    const cache = caches.get(positionKey);
+
+    if (cache) {
+      // Get current state of the associated cache
+      console.log(`Cache state during popupopen: ${cache.coins.length} coins`);
+
+      // Dynamically update the pop-up content with the latest coin count
+      const cacheIntrinsic = CacheFactory.getCacheType(
+        "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
+      );
+
+      const updatedPopupContent = cacheIntrinsic.popupTemplate(
+        cache.marker.getLatLng(),
+        cache.coins,
+      );
+      cache.marker.setPopupContent(updatedPopupContent);
+
+      // Re-attach event handlers to the new elements
+      setTimeout(() => {
+        attachPopupButtons(lat, lng);
+      }, 0); // Ensure DOM stability
+    }
+  });
+}
+
+function attachPopupButtons(lat: number, lng: number) {
+  const addCoinButton = document.getElementById(`add-coin-${lat},${lng}`);
+  const removeCoinButton = document.getElementById(`remove-coin-${lat},${lng}`);
+
+  if (addCoinButton) {
+    addCoinButton.addEventListener("click", () => {
+      const cell = Cell.getCell(lat, lng);
+      addCoins(cell.i, cell.j, lat, lng); // Add coins to player and update cache
+    });
+  } else {
+    console.warn(`Add Coin button not found for (${lat}, ${lng}).`);
+  }
+
+  if (removeCoinButton) {
+    removeCoinButton.addEventListener("click", () => {
+      const cell = Cell.getCell(lat, lng);
+      depositCoin(cell.i, cell.j, lat, lng); // Remove coins from player and update cache
+    });
+  } else {
+    console.warn(`Remove Coin button not found for (${lat}, ${lng}).`);
+  }
+}
+
+function updateVisibleCaches(center: leaflet.LatLng, radius: number) {
+  caches.forEach((cache, key) => {
+    const distance = center.distanceTo(cache.marker.getLatLng());
+    console.log(`Cache ${key} is at distance ${distance} from player.`);
+    if (distance <= radius) {
+      if (!map.hasLayer(cache.marker)) {
+        cache.marker.addTo(map); // Add visible cache
+        console.log(`Cache ${key} shown.`);
+      }
+    } else if (map.hasLayer(cache.marker)) {
+      map.removeLayer(cache.marker); // Hide invisible cache
+      console.log(`Cache ${key} hidden.`);
+    }
+  });
+}
+
 // Talked to Jack O'Brien and Jacky Sanchez to help understand how to create this function (asked them for a general understanding of how this assignment was supposed to be done)
 // Got rid of the positionkey system in the first implementation, and based this solely on coordinate positions
 // Talked to Jacky about her implementation and used a similar idea (in which there is a list for all coins in a specific cache as well as a list containing all of the player's coins)
@@ -221,48 +386,24 @@ function generateCaches(
       if (!caches.has(positionKey)) { // Only generate if cache does not exist
         const randomValue = luck(positionKey);
         if (randomValue < CACHE_SPAWN_PROBABILITY) {
-          // Used YazmynS's code (for this) to understand how to write this and what it does
-          // I used their code in my file to generate deterministically generated coins
-
           const num_coins =
             Math.floor(luck([lat, lng, "initialValue"].toString()) * 100) + 1;
           const coins: Coin[] = [];
           for (let i = 0; i < num_coins; i++) {
             coins.push({ serial: i, initialLat: lat, initialLng: lng });
           }
-
-          // Used ChatGPT to help me write this code
-          // Prompt: Help me deterministically generate locations using these interfaces that implement the flyweight pattern
-          // I inputted my code and iterated on the prompts to get correct(ish) responses
-
           const cacheIntrinsic = CacheFactory.getCacheType(
             "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
           );
-
           const cacheMarker = leaflet.marker(leaflet.latLng(lat, lng), {
             icon: cacheIntrinsic.icon,
-          }).addTo(map);
-
+          });
           cacheMarker.bindPopup(
             cacheIntrinsic.popupTemplate(leaflet.latLng(lat, lng), coins),
           );
 
-          cacheMarker.on("popupopen", () => {
-            const addCoinButton = document.getElementById(
-              `add-coin-${lat},${lng}`,
-            );
-            const removeCoinButton = document.getElementById(
-              `remove-coin-${lat},${lng}`,
-            );
-            addCoinButton?.addEventListener("click", () => {
-              addCoins(cell.i, cell.j, lat, lng); // Pass lat and lng
-            });
-            removeCoinButton?.addEventListener("click", () => {
-              if (userCoins.length > 0) {
-                depositCoin(cell.i, cell.j, lat, lng);
-              }
-            });
-          });
+          // Attach listeners here
+          attachPopupListeners(cacheMarker, lat, lng);
 
           const cache = new Geocache(coins, cacheMarker);
           caches.set(positionKey, cache);
@@ -298,68 +439,72 @@ document.getElementById("sensor")?.addEventListener("click", () => {
           TILE_DEGREES,
         );
         updateVisibleCaches(playerMarker.getLatLng(), 40);
+        saveGameState();
       },
     );
   }
 });
 
 // Functions for coin collection and deposit
-function addCoins(i: number, j: number, lat: number, lng: number) {
-  const positionKey = `${i},${j}`;
+function addCoins(cellI: number, cellJ: number, lat: number, lng: number) {
+  const positionKey = `${cellI},${cellJ}`;
   const cache = caches.get(positionKey);
+
   if (cache && cache.coins.length > 0) {
-    const coinToTransfer = cache.coins.pop();
-    if (coinToTransfer) {
+    const coin = cache.coins.pop();
+    if (coin) {
       userCoins.push({
-        serial: coinToTransfer.serial,
+        serial: coin.serial,
         latLng: leaflet.latLng(lat, lng),
-        initialLat: coinToTransfer.initialLat,
-        initialLng: coinToTransfer.initialLng,
+        initialLat: coin.initialLat,
+        initialLng: coin.initialLng,
       });
-      statusPanel.innerHTML =
-        `Collected at cache ${i},${j}: #${coinToTransfer.serial}`;
-      const coinCountElem = document.getElementById(`coin-count-${lat},${lng}`);
-      if (coinCountElem) {
-        coinCountElem.textContent = `${cache.coins.length}`;
+
+      // Update the pop-up content
+      const coinCountElement = document.getElementById(
+        `coin-count-${lat},${lng}`,
+      );
+      if (coinCountElement) {
+        coinCountElement.textContent = `${cache.coins.length}`;
       }
+      saveGameState();
+      console.log(
+        `Collected coin ${coin.serial} from cache at (${lat}, ${lng})`,
+      );
     }
+  } else {
+    console.log("No coins left in this cache.");
   }
 }
 
-function depositCoin(i: number, j: number, lat: number, lng: number) {
-  const positionKey = `${i},${j}`;
+function depositCoin(cellI: number, cellJ: number, lat: number, lng: number) {
+  const positionKey = `${cellI},${cellJ}`;
   const cache = caches.get(positionKey);
-  if (userCoins.length > 0 && cache) {
-    const coinToDeposit = userCoins.pop();
-    if (coinToDeposit) {
-      cache.coins.push({
-        serial: coinToDeposit.serial,
-        initialLat: coinToDeposit.initialLat,
-        initialLng: coinToDeposit.initialLng,
-      });
-      statusPanel.innerHTML =
-        `Deposited at cache (${i}, ${j}): #${coinToDeposit.serial}`;
-      const coinCountElem = document.getElementById(`coin-count-${lat},${lng}`);
-      if (coinCountElem) {
-        coinCountElem.textContent = `${cache.coins.length}`;
-      }
-    }
-  }
-}
 
-function updateVisibleCaches(center: leaflet.LatLng, radius: number) {
-  caches.forEach((cache, key) => {
-    const distance = center.distanceTo(cache.marker.getLatLng());
-    if (distance <= radius) {
-      if (!map.hasLayer(cache.marker)) {
-        cache.marker.addTo(map);
-        console.log(`Cache ${key} shown.`);
+  if (cache && userCoins.length > 0) {
+    const coin = userCoins.pop();
+    if (coin) {
+      cache.coins.push({
+        serial: coin.serial,
+        initialLat: coin.initialLat,
+        initialLng: coin.initialLng,
+      });
+
+      // Update the pop-up content
+      const coinCountElement = document.getElementById(
+        `coin-count-${lat},${lng}`,
+      );
+      if (coinCountElement) {
+        coinCountElement.textContent = `${cache.coins.length}`;
       }
-    } else if (map.hasLayer(cache.marker)) {
-      map.removeLayer(cache.marker);
-      console.log(`Cache ${key} hidden.`);
+      saveGameState();
+      console.log(
+        `Deposited coin ${coin.serial} into cache at (${lat}, ${lng})`,
+      );
     }
-  });
+  } else {
+    console.log("No coins available to deposit.");
+  }
 }
 
 generateCaches(OAKES_CLASSROOM, NEIGHBORHOOD_SIZE, TILE_DEGREES);
