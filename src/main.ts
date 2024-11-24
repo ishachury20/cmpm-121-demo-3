@@ -17,7 +17,7 @@ app.prepend(header);
 // Location of our classroom (as identified on Google Maps)
 // Tested for other locations with Jacky's help (over a discord call)
 const OAKES_CLASSROOM = leaflet.latLng(36.98949379578401, -122.06277128548504);
-const GAMEPLAY_ZOOM_LEVEL = 19;
+const GAMEPLAY_ZOOM_LEVEL = 19; //19
 const TILE_DEGREES = 1e-4;
 const NEIGHBORHOOD_SIZE = 8;
 const CACHE_SPAWN_PROBABILITY = 0.1;
@@ -57,8 +57,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const currentPosition = playerMarker.getLatLng();
     const newLat = currentPosition.lat + latChange;
     const newLng = currentPosition.lng + lngChange;
-    playerMarker.setLatLng([newLat, newLng]);
+    const newPosition = leaflet.latLng(newLat, newLng);
+
+    playerMarker.setLatLng(newPosition);
     map.panTo([newLat, newLng]);
+
+    playerMovementHistory.push(newPosition);
+    movementPolyline.setLatLngs(playerMovementHistory);
 
     generateCaches(playerMarker.getLatLng(), NEIGHBORHOOD_SIZE, TILE_DEGREES); // add visibility later
     updateVisibleCaches(playerMarker.getLatLng(), 40);
@@ -422,6 +427,14 @@ function generateCaches(
     }
   }
 }
+
+const playerMovementHistory: leaflet.LatLng[] = [OAKES_CLASSROOM];
+
+// Create the polyline and add it to the map
+const movementPolyline = leaflet.polyline(playerMovementHistory, {
+  color: "blue", // Choose a color for the polyline
+  weight: 3, // Set line thickness
+}).addTo(map);
 
 let geolocationWatchId: number | null = null; // To keep track of the geolocation
 
