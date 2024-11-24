@@ -53,6 +53,9 @@ document.addEventListener("DOMContentLoaded", () => {
   //loadGameState();
   const moveDistance = TILE_DEGREES; // move by 0.0001
 
+  const resetButton = document.getElementById("reset");
+  resetButton?.addEventListener("click", resetGameState);
+
   function movePlayer(latChange: number, lngChange: number) {
     const currentPosition = playerMarker.getLatLng();
     const newLat = currentPosition.lat + latChange;
@@ -103,6 +106,7 @@ interface CacheState {
 interface Cache extends Memento<string> {
   coins: Coin[];
   marker: leaflet.Marker;
+  initialCoinCount: number;
 }
 
 // This interface is used for the coin/token the player can collect or depoit to other caches
@@ -186,10 +190,12 @@ class CacheFactory {
 class Geocache implements Cache {
   coins: Coin[];
   marker: leaflet.Marker;
+  initialCoinCount: number;
 
   constructor(coins: Coin[], marker: leaflet.Marker) {
     this.coins = coins;
     this.marker = marker;
+    this.initialCoinCount = coins.length;
   }
 
   // Convert cache state to a string
@@ -316,6 +322,7 @@ function attachPopupListeners(
     if (cache) {
       // Get current state of the associated cache
       console.log(`Cache state during popupopen: ${cache.coins.length} coins`);
+      console.log(`Cache location: ${lat}, ${lng}`);
 
       // Dynamically update the pop-up content with the latest coin count
       const cacheIntrinsic = CacheFactory.getCacheType(
@@ -418,6 +425,7 @@ function generateCaches(
           attachPopupListeners(cacheMarker, lat, lng);
 
           const cache = new Geocache(coins, cacheMarker);
+          cache.initialCoinCount = num_coins;
           caches.set(positionKey, cache);
           console.log(
             `Cache created at (${lat}, ${lng}) with ${num_coins} coins.`,
@@ -528,6 +536,56 @@ function depositCoin(cellI: number, cellJ: number, lat: number, lng: number) {
     }
   } else {
     console.log("No coins available to deposit.");
+  }
+}
+
+function resetGameState() {
+  // Prompt the user to confirm their choice
+  const confirmed = prompt(
+    "Are you sure you want to reset the game? Type 'yes' to confirm.",
+  );
+
+  if (confirmed?.toLowerCase() === "yes") {
+    console.log("Resetting game state...");
+
+    playerMovementHistory.splice(1); // Keep only the initial spawn point
+    movementPolyline.setLatLngs(playerMovementHistory);
+
+    playerMarker.setLatLng(OAKES_CLASSROOM);
+    map.panTo(OAKES_CLASSROOM);
+
+    caches.forEach((cache) => {
+      const latLng = cache.marker.getLatLng();
+
+      // Restore the initial number of coins based on initialCoinCount
+      cache.coins = Array.from({ length: cache.initialCoinCount }, (_, i) => ({
+        serial: i,
+        initialLat: latLng.lat,
+        initialLng: latLng.lng,
+      }));
+
+      // Update cache visualization (reload popup)
+      const cacheIntrinsic = CacheFactory.getCacheType(
+        "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
+      );
+      const updatedPopupContent = cacheIntrinsic.popupTemplate(
+        latLng,
+        cache.coins,
+      );
+      cache.marker.bindPopup(updatedPopupContent);
+    });
+
+    updateVisibleCaches(playerMarker.getLatLng(), 40);
+    userCoins.length = 0;
+
+    localStorage.removeItem("gameState"); // Remove existing state
+    saveGameState(); // Save clean state
+    console.log("Game reset completed!");
+
+    statusPanel.innerHTML = "Player has no coins";
+    alert("Game has been reset!");
+  } else {
+    console.log("Game reset cancelled.");
   }
 }
 
