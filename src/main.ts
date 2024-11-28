@@ -187,34 +187,41 @@ class Cell {
 // The cachefactory checks if there is already an existing icon in the location and if not creates an icon there, and attaching a pop-up
 // CacheIntrinsic and CacheFactory are used to implement the flyweight pattern
 
+// Refactored cacheFactory for D3e (reduce coupling)
+function createCacheIcon(iconUrl: string): leaflet.Icon {
+  return leaflet.icon({
+    iconUrl,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    tooltipAnchor: [16, -28],
+  });
+}
+
+function createPopupTemplate(latLng: leaflet.LatLng, coins: Coin[]): string {
+  return `
+      <div id="popup-${latLng.lat},${latLng.lng}">
+        <p>Cache at (${latLng.lat.toFixed(5)}, ${latLng.lng.toFixed(5)})</p>
+        <p>Coins: <span id="coin-count-${latLng.lat},${latLng.lng}">${coins.length}</span></p>
+        <button id="add-coin-${latLng.lat},${latLng.lng}">Collect Coin</button>
+        <button id="remove-coin-${latLng.lat},${latLng.lng}">Deposit Coin</button>
+      </div>
+  `;
+}
+
 class CacheFactory {
   private static cacheTypes: Map<string, CacheIntrinsic> = new Map();
 
   public static getCacheType(iconUrl: string): CacheIntrinsic {
     let cacheType = CacheFactory.cacheTypes.get(iconUrl);
+
     if (!cacheType) {
-      const icon = leaflet.icon({
-        iconUrl,
-        iconSize: [25, 41],
-        iconAnchor: [12, 41],
-        popupAnchor: [1, -34],
-        tooltipAnchor: [16, -28],
-      });
-
-      // Pop-up that appears when user hovers over a location (red icon)
-      // Used the example (and asked Brace a little) to help me understand this and use it
-
-      const popupTemplate = (latLng: leaflet.LatLng, coins: Coin[]) => `
-        <div id="popup-${latLng.lat},${latLng.lng}">
-          <p>Cache at (${latLng.lat.toFixed(5)}, ${latLng.lng.toFixed(5)})</p>
-          <p>Coins: <span id="coin-count-${latLng.lat},${latLng.lng}">${coins.length}</span></p>
-          <button id="add-coin-${latLng.lat},${latLng.lng}">Collect Coin</button>
-          <button id="remove-coin-${latLng.lat},${latLng.lng}">Deposit Coin</button>
-        </div>
-      `;
+      const icon = createCacheIcon(iconUrl);
+      const popupTemplate = createPopupTemplate; // Reference helper
       cacheType = { icon, popupTemplate };
       CacheFactory.cacheTypes.set(iconUrl, cacheType);
     }
+
     return cacheType;
   }
 }
