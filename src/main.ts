@@ -285,7 +285,7 @@ function loadGameState() {
     // Restore Player Position
     const { lat, lng } = gameState.playerPosition;
     playerMarker.setLatLng([lat, lng]);
-    map.panTo([lat, lng]);
+    panMapToPlayer(leaflet.latLng(lat, lng));
 
     // Restore Player Coins
     userCoins.length = 0; // Clear existing coins to prevent duplicates
@@ -525,7 +525,7 @@ document.getElementById("sensor")?.addEventListener("click", () => {
         const { latitude, longitude } = position.coords;
         const newLatLng = leaflet.latLng(latitude, longitude);
         playerMarker.setLatLng(newLatLng);
-        map.panTo(newLatLng);
+        panMapToPlayer(newLatLng);
 
         // Regenerate caches and update visibility
         generateCaches(
@@ -619,7 +619,7 @@ function resetGameState() {
     movementPolyline.setLatLngs(playerMovementHistory);
 
     playerMarker.setLatLng(OAKES_CLASSROOM);
-    map.panTo(OAKES_CLASSROOM);
+    panMapToPlayer(OAKES_CLASSROOM);
 
     caches.forEach((cache) => {
       const latLng = cache.marker.getLatLng();
