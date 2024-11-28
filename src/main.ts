@@ -347,59 +347,6 @@ document.addEventListener("DOMContentLoaded", () => {
   globalThis.addEventListener("beforeunload", saveGameState); // Save before closing
 });
 
-function attachPopupListeners(
-  cacheMarker: leaflet.Marker,
-  lat: number,
-  lng: number,
-) {
-  cacheMarker.on("popupopen", () => {
-    const cell = Cell.getCell(lat, lng);
-    const positionKey = `${cell.i},${cell.j}`;
-    const cache = caches.get(positionKey);
-
-    if (cache) {
-      // Get current state of the associated cache
-      console.log(`Cache state during popupopen: ${cache.coins.length} coins`);
-      console.log(`Cache location: ${lat}, ${lng}`);
-
-      // Dynamically update the pop-up content with the latest coin count
-      const cacheIntrinsic = CacheFactory.getCacheType(
-        "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
-      );
-
-      const updatedPopupContent = cacheIntrinsic.popupTemplate(
-        cache.marker.getLatLng(),
-        cache.coins,
-      );
-      cache.marker.setPopupContent(updatedPopupContent);
-
-      // Re-attach event handlers to the new elements
-      setTimeout(() => {
-        attachPopupButtons(lat, lng);
-      }, 0); // Ensure DOM stability
-    }
-  });
-}
-
-function attachPopupButtons(lat: number, lng: number) {
-  const addCoinButton = document.getElementById(`add-coin-${lat},${lng}`);
-  const removeCoinButton = document.getElementById(`remove-coin-${lat},${lng}`);
-
-  if (addCoinButton) {
-    addCoinButton.addEventListener("click", () => {
-      const cell = Cell.getCell(lat, lng);
-      addCoins(cell.i, cell.j, lat, lng); // Add coins to player and update cache
-    });
-  }
-
-  if (removeCoinButton) {
-    removeCoinButton.addEventListener("click", () => {
-      const cell = Cell.getCell(lat, lng);
-      depositCoin(cell.i, cell.j, lat, lng); // Remove coins from player and update cache
-    });
-  }
-}
-
 function updateVisibleCaches(center: leaflet.LatLng, radius: number) {
   caches.forEach((cache, key) => {
     const distance = center.distanceTo(cache.marker.getLatLng());
@@ -547,70 +494,115 @@ document.getElementById("sensor")?.addEventListener("click", () => {
   }
 });
 
-// Functions for coin collection and deposit
-function addCoins(cellI: number, cellJ: number, lat: number, lng: number) { //used better variable descriptors
-  const positionKey = `${cellI},${cellJ}`;
+function attachPopupButtons(lat: number, lng: number) {
+  const positionKey = `${Math.floor(lat / TILE_DEGREES)},${
+    Math.floor(lng / TILE_DEGREES)
+  }`;
   const cache = caches.get(positionKey);
 
-  if (cache && cache.coins.length > 0) {
-    const coin = cache.coins.pop();
-    if (coin) {
-      userCoins.push({
-        serial: coin.serial,
-        latLng: leaflet.latLng(lat, lng),
-        initialLat: coin.initialLat,
-        initialLng: coin.initialLng,
-      });
+  const addCoinButton = document.getElementById(`add-coin-${lat},${lng}`);
+  const removeCoinButton = document.getElementById(`remove-coin-${lat},${lng}`);
 
-      statusPanel.innerHTML =
-        `Collected coin (${cellI}, ${cellJ}): #${coin.serial}`;
-      // Update the pop-up content
-      const coinCountElement = document.getElementById(
-        `coin-count-${lat},${lng}`,
-      );
-      if (coinCountElement) {
-        coinCountElement.textContent = `${cache.coins.length}`;
+  // Add coin logic (connect UI to logic)
+  addCoinButton?.addEventListener("click", () => {
+    if (cache) {
+      const collectedCoin = addCoins(userCoins, cache);
+      if (collectedCoin) {
+        // Update UI after logic succeeds
+        updateCoinCountDisplay(lat, lng, cache.coins.length);
+        saveGameState(); // Save updated game state
+        console.log(`Collected coin from (${lat}, ${lng}):`, collectedCoin);
+      } else {
+        console.log("No coins left in the cache to collect.");
       }
-      saveGameState();
-      console.log(
-        `Collected coin ${coin.serial} (${lat}, ${lng})`,
-      );
     }
-  } else {
-    console.log("No coins left in this cache.");
+  });
+
+  // Deposit coin logic (connect UI to logic)
+  removeCoinButton?.addEventListener("click", () => {
+    if (cache) {
+      const depositedCoin = depositCoin(userCoins, cache);
+      if (depositedCoin) {
+        // Update UI after logic succeeds
+        updateCoinCountDisplay(lat, lng, cache.coins.length);
+        saveGameState(); // Save updated game state
+        console.log(`Deposited coin into (${lat}, ${lng}):`, depositedCoin);
+      } else {
+        console.log("Player has no coins to deposit.");
+      }
+    }
+  });
+}
+
+// Separate game logic
+function handlePopupOpenEvent(lat: number, lng: number) {
+  const cell = Cell.getCell(lat, lng);
+  const positionKey = `${cell.i},${cell.j}`;
+  const cache = caches.get(positionKey);
+
+  if (!cache) return;
+
+  console.log(`Cache state: ${cache.coins.length} coins at (${lat}, ${lng})`);
+
+  // Return any necessary updates (e.g., coin count or cache details)
+  return cache;
+}
+
+// UI Listener
+function attachPopupListeners(
+  cacheMarker: leaflet.Marker,
+  lat: number,
+  lng: number,
+) {
+  cacheMarker.on("popupopen", () => {
+    const cache = handlePopupOpenEvent(lat, lng);
+    if (cache) {
+      const updatedPopupContent = createPopupTemplate(
+        cache.marker.getLatLng(),
+        cache.coins,
+      );
+      cache.marker.setPopupContent(updatedPopupContent);
+      attachPopupButtons(lat, lng); // Still modularized for buttons
+    }
+  });
+}
+
+function updateCoinCountDisplay(lat: number, lng: number, coinCount: number) {
+  const coinCountElement = document.getElementById(`coin-count-${lat},${lng}`);
+  if (coinCountElement) {
+    coinCountElement.textContent = `${coinCount}`;
   }
 }
 
-function depositCoin(cellI: number, cellJ: number, lat: number, lng: number) {
-  const positionKey = `${cellI},${cellJ}`;
-  const cache = caches.get(positionKey);
+function addCoins(playerCoins: UserCoin[], cache: Cache): Coin | null {
+  if (!cache || cache.coins.length === 0) return null;
 
-  if (cache && userCoins.length > 0) {
-    const coin = userCoins.pop();
-    if (coin) {
-      cache.coins.push({
-        serial: coin.serial,
-        initialLat: coin.initialLat,
-        initialLng: coin.initialLng,
-      });
-
-      statusPanel.innerHTML =
-        `Deposited coin (${cellI}, ${cellJ}): #${coin.serial}`;
-      // Update the pop-up content
-      const coinCountElement = document.getElementById(
-        `coin-count-${lat},${lng}`,
-      );
-      if (coinCountElement) {
-        coinCountElement.textContent = `${cache.coins.length}`;
-      }
-      saveGameState();
-      console.log(
-        `Deposited coin ${coin.serial} (${lat}, ${lng})`,
-      );
-    }
-  } else {
-    console.log("No coins available to deposit.");
+  const coin = cache.coins.pop();
+  if (coin) {
+    playerCoins.push({
+      serial: coin.serial,
+      latLng: leaflet.latLng(coin.initialLat, coin.initialLng),
+      initialLat: coin.initialLat,
+      initialLng: coin.initialLng,
+    });
+    return coin;
   }
+  return null;
+}
+
+function depositCoin(playerCoins: UserCoin[], cache: Cache): Coin | null {
+  if (!cache || playerCoins.length === 0) return null;
+
+  const coin = playerCoins.pop();
+  if (coin) {
+    cache.coins.push({
+      serial: coin.serial,
+      initialLat: coin.initialLat,
+      initialLng: coin.initialLng,
+    });
+    return coin;
+  }
+  return null;
 }
 
 function resetGameState() {
