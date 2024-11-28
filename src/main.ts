@@ -382,11 +382,14 @@ function updateVisibleCaches(center: leaflet.LatLng, radius: number) {
 // Talked to Jacky about her implementation and used a similar idea (in which there is a list for all coins in a specific cache as well as a list containing all of the player's coins)
 // Coins are popped from one list to another to keep track of which cache they end up in
 
-function generateCaches(
+function generateCacheData(
   center: leaflet.LatLng,
   neighborhoodSize: number,
   tileDegrees: number,
-) {
+  spawnProbability: number, // Added the argument
+): CacheState[] {
+  const generatedCaches: CacheState[] = [];
+
   for (let x = -neighborhoodSize; x <= neighborhoodSize; x++) {
     for (let y = -neighborhoodSize; y <= neighborhoodSize; y++) {
       const lat = center.lat + x * tileDegrees;
@@ -394,45 +397,78 @@ function generateCaches(
       const cell = Cell.getCell(lat, lng);
       const positionKey = `${cell.i},${cell.j}`;
 
-      if (!caches.has(positionKey)) { // Only generate if cache does not exist
+      // Skip if cache already exists
+      if (!caches.has(positionKey)) {
         const randomValue = luck(positionKey);
-        if (randomValue < CACHE_SPAWN_PROBABILITY) {
-          // Used YazmynS's code (for this) to understand how to write this and what it does
-          // I used their code in my file to generate deterministically generated coins
 
-          const num_coins =
+        // Used YazmynS's code (for this) to understand how to write this and what it does
+        // I used their code in my file to generate deterministically generated coins
+
+        if (randomValue < spawnProbability) {
+          const numCoins =
             Math.floor(luck([lat, lng, "initialValue"].toString()) * 100) + 1;
           const coins: Coin[] = [];
-          for (let i = 0; i < num_coins; i++) {
+          for (let i = 0; i < numCoins; i++) {
             coins.push({ serial: i, initialLat: lat, initialLng: lng });
           }
 
-          // Used ChatGPT to help me write this code
-          // Prompt: Help me deterministically generate locations using these interfaces that implement the flyweight pattern
-          // I inputted my code and iterated on the prompts to get correct(ish) responses
-
-          const cacheIntrinsic = CacheFactory.getCacheType(
-            "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
-          );
-          const cacheMarker = leaflet.marker(leaflet.latLng(lat, lng), {
-            icon: cacheIntrinsic.icon,
+          generatedCaches.push({
+            coins,
+            latLng: leaflet.latLng(lat, lng),
           });
-          cacheMarker.bindPopup(
-            cacheIntrinsic.popupTemplate(leaflet.latLng(lat, lng), coins),
-          );
-
-          attachPopupListeners(cacheMarker, lat, lng);
-
-          const cache = new Geocache(coins, cacheMarker);
-          cache.initialCoinCount = num_coins;
-          caches.set(positionKey, cache);
-          console.log(
-            `Cache created at (${lat}, ${lng}) with ${num_coins} coins.`,
-          );
         }
       }
     }
   }
+
+  return generatedCaches;
+}
+
+// Brace suggestion for coupling code smell
+// Refactored code to create individual functions to keep track of cache data and user interface elements (pop-up)
+function renderCacheMarkers(cacheData: CacheState[]) {
+  cacheData.forEach((cache) => {
+    const positionKey = `${Math.floor(cache.latLng.lat / TILE_DEGREES)},${
+      Math.floor(cache.latLng.lng / TILE_DEGREES)
+    }`;
+
+    // Create cache marker
+    // Used ChatGPT to help me write this code
+    // Prompt: Help me deterministically generate locations using these interfaces that implement the flyweight pattern
+    // I inputted my code and iterated on the prompts to get correct(ish) responses
+    const cacheIntrinsic = CacheFactory.getCacheType(
+      "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
+    );
+    const cacheMarker = leaflet.marker(
+      leaflet.latLng(cache.latLng.lat, cache.latLng.lng),
+      { icon: cacheIntrinsic.icon },
+    );
+
+    // Bind the popup
+    cacheMarker.bindPopup(
+      cacheIntrinsic.popupTemplate(cache.latLng, cache.coins),
+    );
+    attachPopupListeners(cacheMarker, cache.latLng.lat, cache.latLng.lng);
+
+    // Add the cache to the map and global caches data structure
+    const newCache = new Geocache(cache.coins, cacheMarker);
+    caches.set(positionKey, newCache);
+  });
+}
+
+function generateCaches(
+  center: leaflet.LatLng,
+  neighborhoodSize: number,
+  tileDegrees: number,
+) {
+  // Pass spawn probability explicitly
+  const cacheData = generateCacheData(
+    center,
+    neighborhoodSize,
+    tileDegrees,
+    CACHE_SPAWN_PROBABILITY,
+  );
+  renderCacheMarkers(cacheData);
 }
 
 const playerMovementHistory: leaflet.LatLng[] = [OAKES_CLASSROOM];
