@@ -81,8 +81,12 @@ function trackPlayerMovement(newPosition: leaflet.LatLng) {
 }
 
 function updateCachesAroundPlayer(playerPosition: leaflet.LatLng) {
-  generateCaches(playerPosition, NEIGHBORHOOD_SIZE, TILE_DEGREES);
+  generateAndRenderCaches(playerPosition);
   updateVisibleCaches(playerPosition, 40);
+}
+
+function generateAndRenderCaches(playerPosition: leaflet.LatLng) {
+  generateCaches(playerPosition, NEIGHBORHOOD_SIZE, TILE_DEGREES);
 }
 
 function setupResetListener() {
@@ -152,6 +156,12 @@ interface Coin {
 interface UserCoin {
   serial: number;
   latLng: leaflet.LatLng;
+  initialLat: number;
+  initialLng: number;
+}
+
+interface SerializedUserCoin {
+  serial: number;
   initialLat: number;
   initialLng: number;
 }
@@ -286,58 +296,69 @@ function saveGameState() {
 
 function loadGameState() {
   const savedState = localStorage.getItem("gameState");
-  if (savedState) {
-    const gameState = JSON.parse(savedState);
+  if (!savedState) {
+    console.log("No saved state found.");
+    return;
+  }
 
-    // Restore Player Position
-    const { lat, lng } = gameState.playerPosition;
-    playerMarker.setLatLng([lat, lng]);
-    panMapToPlayer(leaflet.latLng(lat, lng));
+  console.log("Loading game state...");
+  const gameState = JSON.parse(savedState);
+  const playerCoinsData: SerializedUserCoin[] = gameState.playerCoins;
 
-    // Restore Player Coins
-    userCoins.length = 0; // Clear existing coins to prevent duplicates
-    gameState.playerCoins.forEach((coin: UserCoin) => {
-      userCoins.push({
-        serial: coin.serial,
-        latLng: leaflet.latLng(coin.initialLat, coin.initialLng), // Recreate LatLng
-        initialLat: coin.initialLat,
-        initialLng: coin.initialLng,
-      });
+  restorePlayerPosition(gameState.playerPosition);
+  restorePlayerCoins(playerCoinsData);
+  restoreCaches(gameState.caches);
+  restoreUIState(gameState.statusPanelContent);
+
+  updateVisibleCaches(playerMarker.getLatLng(), 40);
+}
+
+function restorePlayerPosition(playerPosition: leaflet.LatLngLiteral) {
+  playerMarker.setLatLng([playerPosition.lat, playerPosition.lng]);
+  panMapToPlayer(leaflet.latLng(playerPosition.lat, playerPosition.lng));
+}
+
+function restorePlayerCoins(playerCoinsData: SerializedUserCoin[]) {
+  userCoins.length = 0; // Clear existing coins
+  playerCoinsData.forEach((coin) => {
+    userCoins.push({
+      serial: coin.serial,
+      latLng: leaflet.latLng(coin.initialLat, coin.initialLng),
+      initialLat: coin.initialLat,
+      initialLng: coin.initialLng,
+    });
+  });
+}
+
+function restoreCaches(cacheStates: Record<string, CacheState>) {
+  caches.clear();
+  Object.keys(cacheStates).forEach((key) => {
+    const cacheState = cacheStates[key];
+    const cacheIntrinsic = CacheFactory.getCacheType(
+      "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
+    );
+    const cacheMarker = leaflet.marker(cacheState.latLng, {
+      icon: cacheIntrinsic.icon,
     });
 
-    caches.clear(); // Clear existing caches
-    for (const key of Object.keys(gameState.caches)) {
-      const cacheState = gameState.caches[key];
-      const cacheIntrinsic = CacheFactory.getCacheType(
-        "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
-      );
-      const cacheMarker = leaflet.marker(cacheState.latLng, {
-        icon: cacheIntrinsic.icon,
-      });
+    // Attach popups
+    cacheMarker.bindPopup(
+      cacheIntrinsic.popupTemplate(cacheState.latLng, cacheState.coins),
+    );
+    attachPopupListeners(
+      cacheMarker,
+      cacheState.latLng.lat,
+      cacheState.latLng.lng,
+    );
 
-      // Attach the popup and re-bind events for buttons
-      cacheMarker.bindPopup(
-        cacheIntrinsic.popupTemplate(cacheState.latLng, cacheState.coins),
-      );
-      attachPopupListeners(
-        cacheMarker,
-        cacheState.latLng.lat,
-        cacheState.latLng.lng,
-      );
+    // Add to the global cache map
+    caches.set(key, new Geocache(cacheState.coins, cacheMarker));
+  });
+}
 
-      // Add cache back to the global cache map
-      caches.set(key, new Geocache(cacheState.coins, cacheMarker));
-    }
-
-    if (gameState.statusPanelContent) {
-      statusPanel.innerHTML = gameState.statusPanelContent;
-    }
-
-    updateVisibleCaches(playerMarker.getLatLng(), 40);
-
-    console.log("Game state loaded!");
-  } else {
-    console.log("No saved state found.");
+function restoreUIState(statusPanelContent: string) {
+  if (statusPanelContent) {
+    statusPanel.innerHTML = statusPanelContent;
   }
 }
 
@@ -605,54 +626,60 @@ function depositCoin(playerCoins: UserCoin[], cache: Cache): Coin | null {
   return null;
 }
 
+//Refactored for cohesion
 function resetGameState() {
-  // Prompt the user to confirm their choice
+  if (!confirmReset()) return;
+
+  console.log("Resetting game state...");
+  resetPlayerPosition();
+  resetAllCaches();
+  clearGameData();
+  saveGameState();
+  alert("Game has been reset!");
+}
+
+// Helper Functions
+function confirmReset(): boolean {
   const confirmed = prompt(
     "Are you sure you want to reset the game? Type 'yes' to confirm.",
   );
+  return confirmed?.toLowerCase() === "yes";
+}
 
-  if (confirmed?.toLowerCase() === "yes") {
-    console.log("Resetting game state...");
+function resetPlayerPosition() {
+  playerMovementHistory.splice(1);
+  movementPolyline.setLatLngs(playerMovementHistory);
+  playerMarker.setLatLng(OAKES_CLASSROOM);
+  panMapToPlayer(OAKES_CLASSROOM);
+}
 
-    playerMovementHistory.splice(1); // Keep only the initial spawn point
-    movementPolyline.setLatLngs(playerMovementHistory);
+function resetAllCaches() {
+  caches.forEach((cache) => {
+    const latLng = cache.marker.getLatLng();
+    // Restore coins
+    cache.coins = Array.from({ length: cache.initialCoinCount }, (_, i) => ({
+      serial: i,
+      initialLat: latLng.lat,
+      initialLng: latLng.lng,
+    }));
 
-    playerMarker.setLatLng(OAKES_CLASSROOM);
-    panMapToPlayer(OAKES_CLASSROOM);
+    // Reset popup content
+    const cacheIntrinsic = CacheFactory.getCacheType(
+      "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
+    );
+    const updatedPopupContent = cacheIntrinsic.popupTemplate(
+      latLng,
+      cache.coins,
+    );
+    cache.marker.bindPopup(updatedPopupContent);
+  });
+  updateVisibleCaches(playerMarker.getLatLng(), 40);
+}
 
-    caches.forEach((cache) => {
-      const latLng = cache.marker.getLatLng();
-
-      // Restore the initial number of coins based on initialCoinCount
-      cache.coins = Array.from({ length: cache.initialCoinCount }, (_, i) => ({
-        serial: i,
-        initialLat: latLng.lat,
-        initialLng: latLng.lng,
-      }));
-
-      // Update cache visualization (reload popup)
-      const cacheIntrinsic = CacheFactory.getCacheType(
-        "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
-      );
-      const updatedPopupContent = cacheIntrinsic.popupTemplate(
-        latLng,
-        cache.coins,
-      );
-      cache.marker.bindPopup(updatedPopupContent);
-    });
-
-    updateVisibleCaches(playerMarker.getLatLng(), 40);
-    userCoins.length = 0;
-
-    localStorage.removeItem("gameState"); // Remove existing state
-    saveGameState(); // Save clean state
-    console.log("Game reset completed!");
-
-    statusPanel.innerHTML = "Player has no coins";
-    alert("Game has been reset!");
-  } else {
-    console.log("Game reset cancelled.");
-  }
+function clearGameData() {
+  userCoins.length = 0;
+  localStorage.removeItem("gameState");
+  statusPanel.innerHTML = "Player has no coins";
 }
 
 generateCaches(OAKES_CLASSROOM, NEIGHBORHOOD_SIZE, TILE_DEGREES);
