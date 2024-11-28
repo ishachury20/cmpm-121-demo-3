@@ -49,38 +49,70 @@ playerMarker.addTo(map);
 const statusPanel = document.querySelector<HTMLDivElement>("#statusPanel")!;
 statusPanel.innerHTML = `Player has no coins`;
 
-document.addEventListener("DOMContentLoaded", () => {
-  //loadGameState();
-  const moveDistance = TILE_DEGREES; // move by 0.0001
+// movePlayer and helpers: Refactored for modularity
+function movePlayer(latChange: number, lngChange: number) {
+  const newPosition = updatePlayerPosition(latChange, lngChange);
+  panMapToPlayer(newPosition);
+  trackPlayerMovement(newPosition);
+  updateCachesAroundPlayer(newPosition);
+  saveGameState();
+}
 
+function updatePlayerPosition(
+  latChange: number,
+  lngChange: number,
+): leaflet.LatLng {
+  const currentPosition = playerMarker.getLatLng();
+  const newLat = currentPosition.lat + latChange;
+  const newLng = currentPosition.lng + lngChange;
+  const newPosition = leaflet.latLng(newLat, newLng);
+
+  playerMarker.setLatLng(newPosition); // Reuse playerMarker directly
+  return newPosition;
+}
+
+function panMapToPlayer(newPosition: leaflet.LatLng) {
+  map.panTo(newPosition);
+}
+
+function trackPlayerMovement(newPosition: leaflet.LatLng) {
+  playerMovementHistory.push(newPosition);
+  movementPolyline.setLatLngs(playerMovementHistory);
+}
+
+function updateCachesAroundPlayer(playerPosition: leaflet.LatLng) {
+  generateCaches(playerPosition, NEIGHBORHOOD_SIZE, TILE_DEGREES);
+  updateVisibleCaches(playerPosition, 40);
+}
+
+function setupResetListener() {
   const resetButton = document.getElementById("reset");
   resetButton?.addEventListener("click", resetGameState);
+}
 
-  function movePlayer(latChange: number, lngChange: number) {
-    const currentPosition = playerMarker.getLatLng();
-    const newLat = currentPosition.lat + latChange;
-    const newLng = currentPosition.lng + lngChange;
-    const newPosition = leaflet.latLng(newLat, newLng);
+function setupMovementListeners(moveDistance: number) {
+  document.getElementById("north")?.addEventListener(
+    "click",
+    () => movePlayer(moveDistance, 0),
+  );
+  document.getElementById("south")?.addEventListener(
+    "click",
+    () => movePlayer(-moveDistance, 0),
+  );
+  document.getElementById("east")?.addEventListener(
+    "click",
+    () => movePlayer(0, moveDistance),
+  );
+  document.getElementById("west")?.addEventListener(
+    "click",
+    () => movePlayer(0, -moveDistance),
+  );
+}
 
-    playerMarker.setLatLng(newPosition);
-    map.panTo([newLat, newLng]);
-
-    playerMovementHistory.push(newPosition);
-    movementPolyline.setLatLngs(playerMovementHistory);
-
-    generateCaches(playerMarker.getLatLng(), NEIGHBORHOOD_SIZE, TILE_DEGREES); // add visibility later
-    updateVisibleCaches(playerMarker.getLatLng(), 40);
-    saveGameState();
-  }
-
-  const northButton = document.getElementById("north")!;
-  northButton.addEventListener("click", () => movePlayer(moveDistance, 0));
-  const southButton = document.getElementById("south")!;
-  southButton.addEventListener("click", () => movePlayer(-moveDistance, 0));
-  const eastButton = document.getElementById("east")!;
-  eastButton.addEventListener("click", () => movePlayer(0, moveDistance));
-  const westButton = document.getElementById("west")!;
-  westButton.addEventListener("click", () => movePlayer(0, -moveDistance));
+document.addEventListener("DOMContentLoaded", () => {
+  setupResetListener();
+  const moveDistance = TILE_DEGREES;
+  setupMovementListeners(moveDistance);
 });
 
 // Interfaace to implement the momento pattern
